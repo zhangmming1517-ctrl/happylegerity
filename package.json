@@ -1,0 +1,57 @@
+{
+  "name": "legerity",
+  "displayName": "AI 极简饮食规划助手",
+  "private": false,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "基于 AI（Google Gemini）的智能一周饮食规划与采购清单生成工具，支持 PWA 和 iOS 安装",
+  "license": "MIT",
+  "author": {
+    "name": "Your Name",
+    "url": "https://github.com/yourusername"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/legerity"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/legerity/issues"
+  },
+  "homepage": "https://github.com/yourusername/legerity#readme",
+  "keywords": [
+    "ai",
+    "diet-planner",
+    "nutrition",
+    "pwa",
+    "react",
+    "typescript",
+    "vite",
+    "gemini",
+    "ios"
+  ],
+  "scripts": {
+    "gen:icons": "node scripts/generate-icons.js",
+    "dev": "vite",
+    "build": "npm run gen:icons && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@google/genai": "^1.41.0",
+    "lucide-react": "0.475.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "sharp": "^0.34.5",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0",
+    "vite-plugin-pwa": "^1.2.0",
+    "workbox-cacheable-response": "^7.4.0",
+    "workbox-expiration": "^7.4.0",
+    "workbox-precaching": "^7.4.0",
+    "workbox-routing": "^7.4.0",
+    "workbox-strategies": "^7.4.0"
+  }
+}

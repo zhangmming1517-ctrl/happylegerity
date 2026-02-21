@@ -1,0 +1,70 @@
+# Netlify 部署配置
+# 用于 AI 极简饮食规划助手 PWA 应用
+
+[build]
+# 构建命令
+command = "npm run build"
+# 构建输出目录
+publish = "dist"
+# Node.js 版本
+functions = "functions"
+
+# 环境变量（在 Netlify 控制面板也需配置）
+[build.environment]
+NODE_VERSION = "18"
+NPM_VERSION = "9"
+
+# 重定向规则（SPA 路由配置）
+# 排除 API 调用和具有扩展名的资源
+[[redirects]]
+from = "/api/*"
+to = ":splat"
+status = 200
+force = false
+
+[[redirects]]
+from = "/*"
+to = "/index.html"
+status = 200
+conditions = { "Not-Path" = ["/assets/*", "/icon-*", "*.js", "*.css", "*.json", "*.png", "*.jpg", "*.svg", "*.webmanifest"] }
+
+# 缓存规则
+[[headers]]
+for = "/manifest.webmanifest"
+[headers.values]
+  Content-Type = "application/manifest+json"
+  Cache-Control = "public, max-age=3600"
+
+[[headers]]
+for = "/sw.js"
+[headers.values]
+  Content-Type = "application/javascript"
+  Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+for = "/registerSW.js"
+[headers.values]
+  Content-Type = "application/javascript"
+  Cache-Control = "public, max-age=0, must-revalidate"
+
+# 静态资源长期缓存
+[[headers]]
+for = "/assets/*"
+[headers.values]
+  Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+for = "/icon-*"
+[headers.values]
+  Cache-Control = "public, max-age=604800"
+
+# 安全头
+[[headers]]
+for = "/*"
+[headers.values]
+  X-Content-Type-Options = "nosniff"
+  X-Frame-Options = "DENY"
+  X-XSS-Protection = "1; mode=block"
+  Referrer-Policy = "strict-origin-when-cross-origin"
+  Strict-Transport-Security = "max-age=31536000; includeSubDomains"
+  Content-Security-Policy = "default-src 'self' https: data:; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://esm.sh; style-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' https: data:; connect-src 'self' https://generativelanguage.googleapis.com https://fonts.googleapis.com https://fonts.gstatic.com; media-src 'self';"
