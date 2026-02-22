@@ -1,6 +1,11 @@
 import { UserProfile, DietConfig, HealthMetrics, WeeklyPlanResponse, ApiSettings } from "../types";
-import { generateWeeklyPlanWithGemini, testGeminiConnection } from "./geminiService";
-import { generateWeeklyPlanWithOpenAI, generateWeeklyPlanWithOpenAICompatible, testOpenAICompatibleConnection } from "./openaiService";
+import { 
+  generateWeeklyPlanWithGemini, 
+  testGeminiConnection,
+  generateWeeklyPlanWithOpenAI,
+  generateWeeklyPlanWithOpenAICompatible,
+  testOpenAICompatibleConnection
+} from "./aiService";
 
 /** 根据当前 API 设置调用对应提供商生成一周计划 */
 export async function generateWeeklyPlan(

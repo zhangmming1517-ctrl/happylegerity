@@ -71,6 +71,62 @@ result → 三餐安排 + 购物清单 + 调料 → 复制 / 查看具体做法 
 - **匹配优先级**：用户相关食材 > 基础常驻条目（米饭、鸡蛋、西兰花等 16 种）。
 - **数据注入**：每 100g 可食部的量化数据，强制 AI 在计算 `portion` 时有据可依。
 
+#### 5.2.1 RAG 从用户配置到参考文本的完整流程（产品架构示意）
+
+```mermaid
+flowchart TB
+  subgraph 用户输入["用户输入与配置"]
+    A[DietConfig 饮食配置]
+    A --> A1[模式: 采买 / 清冰箱]
+    A --> A2[本周想吃的食材 wantedIngredients]
+    A --> A2b[已有食材 existingIngredients]
+    A --> A3[口味/主食/重复等]
+  end
+
+  subgraph 主流程["主流程: buildWeeklyPlanPrompt"]
+    B[构建主 Prompt]
+    B --> B1[Role + UserProfile + Constraints + OutputSpecs]
+    B --> B2[调用 getNutritionReferenceForPrompt]
+  end
+
+  subgraph RAG检索["RAG 检索层 (ragNutrition.ts)"]
+    C[extractKeywords]
+    C --> C1[从 wantedIngredients 或 existingIngredients 按逗号/空格拆分]
+    C --> C2[去重得到关键词列表]
+    D[FOOD_NUTRITION_DB 本地知识库]
+    C2 --> E[遍历知识库每条食物]
+    E --> E1{在 BASE_NAMES 常驻 16 种?}
+    E1 -->|是| F1[加入 base 列表]
+    E1 -->|否| E2{matchFood 与关键词匹配?}
+    E2 -->|是| F2[加入 matched 列表]
+    E2 -->|否| E3[跳过]
+    F1 --> G[合并: matched 优先 + base 补足]
+    F2 --> G
+    G --> H[按 name 去重, 截断至 maxEntries 条]
+    H --> I[格式化为参考文本]
+    I --> I1["每行: 名称（备注）: 热量x kcal、蛋白质x g、脂肪x g、碳水x g"]
+    I1 --> I2[加标题与结尾说明]
+  end
+
+  subgraph 输出["最终输出"]
+    J[营养参考文本 nutritionRef]
+    K[若长度 > 1800 字则截断]
+    L[主 Prompt + 营养参考文本]
+    L --> M[注入 LLM 的完整 Prompt]
+  end
+
+  用户输入 --> 主流程
+  B2 --> C
+  D --> E
+  I2 --> J
+  J --> K
+  K --> L
+  B1 --> L
+```
+
+- **数据流**：用户配置 → 关键词提取 → 知识库检索（关键词匹配 + 常驻补全）→ 合并去重截断 → 格式化 → 与主 Prompt 拼接 → 送入 LLM。
+- **设计要点**：无向量库、纯关键词+常驻列表，保证响应速度与可控性；RAG 结果作为「可锚定数据」降低 LLM 幻觉。
+
 ### 5.3 模型选型
 - **主选模型**：`gemini-3-flash-preview`（高性价比、极速响应、支持 JSON Schema 约束）。
 - **备选/自定义**：支持 `gpt-4o-mini` 及用户自定义 OpenAI 兼容接口。

@@ -35,6 +35,7 @@ export interface UserProfile {
 export interface DietConfig {
   mode: DietMode;
   flavorPreference: string[]; // Updated to multi-select
+  staplePreference: '南方米饭派' | '北方面食派' | '不限'; // 主食习惯
   wantedIngredients?: string; // Mode A
   existingIngredients?: string; // Mode B
   enableMealPrepRepetition: boolean;
@@ -63,6 +64,7 @@ export interface ShoppingItem {
 
 export interface Recipe {
   dishName: string;
+  ingredients: string; // 食材用量清单，如 "土豆200g、牛腩500g、姜片适量"
   steps: string[];
 }
 
@@ -87,6 +89,8 @@ export type BuiltinApiProvider = 'gemini' | 'openai';
 export interface CustomApiProvider {
   id: string;
   name: string;
+  /** 预设服务商 id 时由系统填充 baseUrl，用户可不填 */
+  presetId?: string;
   baseUrl: string;
   model: string;
   apiKey: string;

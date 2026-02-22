@@ -40,6 +40,15 @@ const defaultApiSettings: ApiSettings = {
   customProviders: [],
 };
 
+/** 预设的 OpenAI 兼容 API 服务商，选后无需填 Base URL */
+const PRESET_API_PROVIDERS: { id: string; name: string; baseUrl: string; defaultModel: string }[] = [
+  { id: 'deepseek', name: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1/chat/completions', defaultModel: 'deepseek-chat' },
+  { id: 'moonshot', name: 'Kimi（月之暗面）', baseUrl: 'https://api.moonshot.cn/v1/chat/completions', defaultModel: 'moonshot-v1-8k' },
+  { id: 'qwen', name: '通义千问', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions', defaultModel: 'qwen-turbo' },
+  { id: 'zhipu', name: '智谱 AI', baseUrl: 'https://open.bigmodel.cn/api/paas/v4/chat/completions', defaultModel: 'glm-4-flash' },
+  { id: 'custom', name: '自定义（需手动填写 URL）', baseUrl: '', defaultModel: '' },
+];
+
 const Disclaimer: React.FC<{ className?: string }> = ({ className = "" }) => (
   <div className={`px-6 py-4 bg-gray-50 border-t border-gray-100 ${className}`}>
     <div className="flex items-start gap-2 text-gray-400">
@@ -92,12 +101,13 @@ const App: React.FC = () => {
         window.scrollTo(0, 1);
       }
     };
+    const handleOrientationChange = () => setTimeout(hideAddressBar, 100);
     window.addEventListener('scroll', hideAddressBar);
-    window.addEventListener('orientationchange', () => setTimeout(hideAddressBar, 100));
+    window.addEventListener('orientationchange', handleOrientationChange);
     hideAddressBar();
     return () => {
       window.removeEventListener('scroll', hideAddressBar);
-      window.removeEventListener('orientationchange', hideAddressBar);
+      window.removeEventListener('orientationchange', handleOrientationChange);
     };
   }, []);
 
@@ -136,6 +146,7 @@ const App: React.FC = () => {
   const [config, setConfig] = useState<DietConfig>({
     mode: DietMode.BUYING,
     flavorPreference: ['清淡'],
+    staplePreference: '不限',
     wantedIngredients: '',
     existingIngredients: '',
     enableMealPrepRepetition: true,
@@ -145,12 +156,18 @@ const App: React.FC = () => {
   const [plan, setPlan] = useState<WeeklyPlanResponse | null>(null);
   const metrics = useMemo(() => calculateHealthMetrics(profile), [profile]);
 
+  const [planWarning, setPlanWarning] = useState<string | null>(null);
+
   const handleGenerate = async () => {
     setLoading(true);
     setError(null);
+    setPlanWarning(null);
     try {
       const result = await generateWeeklyPlan(profile, metrics, config, apiSettings);
       setPlan(result);
+      if (config.maxIngredients != null && config.maxIngredients > 0 && result.shoppingList.length > config.maxIngredients) {
+        setPlanWarning(`当前采购清单为 ${result.shoppingList.length} 种，超过您设定的 ${config.maxIngredients} 种，建议重新生成或调高「食材种类上限」。`);
+      }
       setPage('result');
     } catch (err: any) {
       setError(err.message || '系统繁忙，请重试');
@@ -231,8 +248,9 @@ const App: React.FC = () => {
     const item = {
       id,
       name: `自定义 API ${apiSettings.customProviders.length + 1}`,
-      baseUrl: 'https://api.openai.com/v1/chat/completions',
-      model: 'gpt-4o-mini',
+      presetId: undefined as string | undefined,
+      baseUrl: '',
+      model: '',
       apiKey: '',
     };
     setApiSettings((prev) => ({
@@ -242,7 +260,7 @@ const App: React.FC = () => {
     }));
   };
 
-  const updateSelectedCustomProvider = (patch: Partial<{ name: string; baseUrl: string; model: string; apiKey: string }>) => {
+  const updateSelectedCustomProvider = (patch: Partial<{ name: string; presetId?: string; baseUrl: string; model: string; apiKey: string }>) => {
     const targetId = apiSettings.selectedProviderId;
     setApiSettings((prev) => ({
       ...prev,
@@ -522,6 +540,23 @@ const App: React.FC = () => {
       
       <div className="flex-1 overflow-y-auto px-6 py-6 space-y-8 no-scrollbar scroll-smooth">
         <div>
+          <label className="text-[10px] font-bold text-gray-400 uppercase mb-3 block tracking-widest">主食习惯</label>
+          <div className="flex flex-wrap gap-2">
+            {['南方米饭派', '北方面食派', '不限'].map(t => (
+              <button 
+                key={t} 
+                onClick={() => setConfig({...config, staplePreference: t as '南方米饭派' | '北方面食派' | '不限'})}
+                className={`px-5 py-3 rounded-2xl border text-sm font-bold transition-all ${
+                  config.staplePreference === t 
+                  ? 'bg-green-500 text-white border-green-500 shadow-md shadow-green-100' 
+                  : 'bg-gray-50 text-gray-500 border-gray-100'
+                }`}
+              >{t}</button>
+            ))}
+          </div>
+        </div>
+
+        <div>
           <label className="text-[10px] font-bold text-gray-400 uppercase mb-3 block tracking-widest">口味偏好 (可多选)</label>
           <div className="flex flex-wrap gap-2">
             {['清淡', '香辣', '酱香', '酸甜', '西式'].map(t => (
@@ -579,7 +614,7 @@ const App: React.FC = () => {
           <div className="flex items-center justify-between bg-gray-50 p-5 rounded-[24px]">
             <div>
               <p className="text-sm font-bold text-gray-800">允许食谱重复</p>
-              <p className="text-[10px] text-gray-400 mt-0.5">提高备菜效率，减少浪费</p>
+              <p className="text-[10px] text-gray-400 mt-0.5">每餐默认 3-4 种组合，提高备菜效率</p>
             </div>
             <button 
               onClick={() => setConfig({...config, enableMealPrepRepetition: !config.enableMealPrepRepetition})}
@@ -591,12 +626,12 @@ const App: React.FC = () => {
         </div>
 
         <div>
-          <label className="text-[10px] font-bold text-gray-400 uppercase mb-3 block tracking-widest">食材说明</label>
+          <label className="text-[10px] font-bold text-gray-400 uppercase mb-3 block tracking-widest">本周食材偏好</label>
           <div className="space-y-4">
             {config.mode === DietMode.BUYING ? (
               <input 
                 type="text" 
-                placeholder="本周想吃的食材 (选填)" 
+                placeholder="本周食材或菜品偏好 (选填)" 
                 value={config.wantedIngredients}
                 onChange={(e) => setConfig({...config, wantedIngredients: e.target.value})}
                 className="w-full h-14 bg-gray-50 rounded-[20px] px-5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-green-400 transition-all" 
@@ -660,6 +695,12 @@ const App: React.FC = () => {
           </div>
           <Flame size={36} className="text-white/30" />
         </div>
+
+        {planWarning && (
+          <div className="mb-6 px-5 py-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800 text-sm font-medium">
+            ⚠️ {planWarning}
+          </div>
+        )}
 
         <div className="mb-10">
           <h3 className="text-lg font-bold text-gray-800 mb-5 flex items-center">
@@ -753,8 +794,8 @@ const App: React.FC = () => {
       </div>
 
       {showRecipes && plan && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-md z-50 flex flex-col justify-end">
-          <div className="bg-white rounded-t-[32px] p-8 max-h-[85%] overflow-y-auto shadow-2xl animate-in slide-in-from-bottom duration-300 no-scrollbar">
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-md z-50 flex items-center justify-center">
+          <div className="bg-white rounded-[32px] w-full max-w-md mx-auto p-8 max-h-[85vh] overflow-y-auto shadow-2xl animate-in slide-in-from-bottom duration-300 no-scrollbar">
             <div className="flex justify-between items-center mb-8">
               <h3 className="text-2xl font-bold text-gray-800">烹饪指南</h3>
               <button onClick={() => setShowRecipes(false)} className="p-2 bg-gray-100 rounded-full text-gray-400"><X size={20}/></button>
@@ -766,6 +807,12 @@ const App: React.FC = () => {
                     <span className="w-1.5 h-6 bg-green-500 rounded-full mr-3"></span>
                     {recipe.dishName}
                   </p>
+                  {recipe.ingredients && (
+                    <div className="mt-2 px-4 py-2.5 bg-orange-50 border border-orange-100 rounded-xl">
+                      <p className="text-[10px] font-bold text-orange-600 uppercase tracking-wider mb-1">本菜食材用量</p>
+                      <p className="text-sm text-gray-800 font-semibold leading-relaxed">{recipe.ingredients}</p>
+                    </div>
+                  )}
                   <div className="mt-4 space-y-4">
                     {recipe.steps?.map((step, sIdx) => (
                       <div key={sIdx} className="flex gap-4 items-start">
@@ -871,22 +918,51 @@ const App: React.FC = () => {
               </div>
             ) : selectedCustom ? (
               <div className="space-y-3">
+                <div>
+                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-2">服务商（选已知则免填 URL）</label>
+                  <select
+                    value={selectedCustom.presetId || 'custom'}
+                    onChange={(e) => {
+                      const id = e.target.value;
+                      if (id === 'custom') {
+                        updateSelectedCustomProvider({ presetId: undefined, baseUrl: '', model: '' });
+                      } else {
+                        const preset = PRESET_API_PROVIDERS.find((p) => p.id === id);
+                        if (preset) updateSelectedCustomProvider({ presetId: preset.id, baseUrl: preset.baseUrl, model: preset.defaultModel, name: preset.name });
+                      }
+                    }}
+                    className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-green-400 focus:outline-none"
+                  >
+                    {PRESET_API_PROVIDERS.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                </div>
                 <input
                   value={selectedCustom.name}
                   onChange={(e) => updateSelectedCustomProvider({ name: e.target.value })}
-                  placeholder="自定义 API 名称"
+                  placeholder="API 名称（可自定义显示名）"
                   className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-green-400 focus:outline-none"
                 />
-                <input
-                  value={selectedCustom.baseUrl}
-                  onChange={(e) => updateSelectedCustomProvider({ baseUrl: e.target.value })}
-                  placeholder="Base URL（如 https://xxx/v1/chat/completions）"
-                  className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-green-400 focus:outline-none"
-                />
+                {selectedCustom.presetId && selectedCustom.presetId !== 'custom' ? (
+                  <p className="text-xs text-green-600 bg-green-50 px-3 py-2 rounded-xl">
+                    ✓ 使用 {PRESET_API_PROVIDERS.find((p) => p.id === selectedCustom.presetId)?.name || selectedCustom.presetId} 官方地址，无需填写 URL
+                  </p>
+                ) : (
+                  <div>
+                    <input
+                      value={selectedCustom.baseUrl}
+                      onChange={(e) => updateSelectedCustomProvider({ baseUrl: e.target.value })}
+                      placeholder="Base URL（完整地址，如 https://api.xxx.com/v1/chat/completions）"
+                      className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-green-400 focus:outline-none"
+                    />
+                    <p className="text-[10px] text-gray-400 mt-1 px-2">💡 自定义服务商需填写完整 API 地址</p>
+                  </div>
+                )}
                 <input
                   value={selectedCustom.model}
                   onChange={(e) => updateSelectedCustomProvider({ model: e.target.value })}
-                  placeholder="Model（如 gpt-4o-mini）"
+                  placeholder="Model（如 deepseek-chat、moonshot-v1-8k）"
                   className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-green-400 focus:outline-none"
                 />
                 <input
