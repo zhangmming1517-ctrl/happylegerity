@@ -79,3 +79,25 @@ export interface HealthMetrics {
   targetCalories: number;
   bmiCategory: string;
 }
+
+/** 内置 API 提供商 */
+export type BuiltinApiProvider = 'gemini' | 'openai';
+
+/** 自定义 API（默认按 OpenAI 兼容格式调用） */
+export interface CustomApiProvider {
+  id: string;
+  name: string;
+  baseUrl: string;
+  model: string;
+  apiKey: string;
+}
+
+/** API 设置（持久化到 localStorage） */
+export interface ApiSettings {
+  /** 当前选中的 provider id（内置为 gemini/openai，自定义为 custom_xxx） */
+  selectedProviderId: string;
+  /** 内置 API 的 key */
+  builtinApiKeys: Partial<Record<BuiltinApiProvider, string>>;
+  /** 用户自定义 API 列表 */
+  customProviders: CustomApiProvider[];
+}

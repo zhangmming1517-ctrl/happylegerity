@@ -13,7 +13,8 @@ import {
   X,
   ShieldAlert,
   Copy,
-  Check
+  Check,
+  Key
 } from 'lucide-react';
 import { 
   UserProfile, 
@@ -23,12 +24,21 @@ import {
   Gender, 
   ActivityLevel, 
   DietGoal, 
-  DietMode 
+  DietMode,
+  ApiSettings,
+  BuiltinApiProvider
 } from './types';
 import { calculateHealthMetrics } from './utils/calculators';
-import { generateWeeklyPlan } from './services/geminiService';
+import { generateWeeklyPlan, testApiConnection } from './services/planService';
 
 const STORAGE_KEY = 'minimalist_diet_profile';
+const API_SETTINGS_KEY = 'minimalist_diet_api_settings';
+
+const defaultApiSettings: ApiSettings = {
+  selectedProviderId: 'gemini',
+  builtinApiKeys: {},
+  customProviders: [],
+};
 
 const Disclaimer: React.FC<{ className?: string }> = ({ className = "" }) => (
   <div className={`px-6 py-4 bg-gray-50 border-t border-gray-100 ${className}`}>
@@ -47,6 +57,33 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [showRecipes, setShowRecipes] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
+  const [showApiSettings, setShowApiSettings] = useState(false);
+  const [apiTestLoading, setApiTestLoading] = useState(false);
+  const [apiTestMessage, setApiTestMessage] = useState<string | null>(null);
+  const [apiTestOk, setApiTestOk] = useState<boolean | null>(null);
+
+  const [apiSettings, setApiSettings] = useState<ApiSettings>(() => {
+    try {
+      const saved = localStorage.getItem(API_SETTINGS_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved) as any;
+        // 兼容旧版本结构：{ provider, apiKeys }
+        if (parsed.provider || parsed.apiKeys) {
+          return {
+            selectedProviderId: parsed.provider || 'gemini',
+            builtinApiKeys: parsed.apiKeys || {},
+            customProviders: [],
+          };
+        }
+        return {
+          selectedProviderId: parsed.selectedProviderId || 'gemini',
+          builtinApiKeys: parsed.builtinApiKeys || {},
+          customProviders: parsed.customProviders || [],
+        };
+      }
+    } catch (_) {}
+    return { ...defaultApiSettings };
+  });
 
   // 隐藏 iOS Safari 地址栏
   useEffect(() => {
@@ -92,6 +129,10 @@ const App: React.FC = () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
   }, [profile]);
 
+  useEffect(() => {
+    localStorage.setItem(API_SETTINGS_KEY, JSON.stringify(apiSettings));
+  }, [apiSettings]);
+
   const [config, setConfig] = useState<DietConfig>({
     mode: DietMode.BUYING,
     flavorPreference: ['清淡'],
@@ -108,13 +149,29 @@ const App: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const result = await generateWeeklyPlan(profile, metrics, config);
+      const result = await generateWeeklyPlan(profile, metrics, config, apiSettings);
       setPlan(result);
       setPage('result');
     } catch (err: any) {
       setError(err.message || '系统繁忙，请重试');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleTestApiConnection = async () => {
+    setApiTestLoading(true);
+    setApiTestMessage(null);
+    setApiTestOk(null);
+    try {
+      await testApiConnection(apiSettings);
+      setApiTestOk(true);
+      setApiTestMessage('连接成功：当前 API 可用。');
+    } catch (e: any) {
+      setApiTestOk(false);
+      setApiTestMessage(e?.message || '连接测试失败，请检查配置。');
+    } finally {
+      setApiTestLoading(false);
     }
   };
 
@@ -161,6 +218,46 @@ const App: React.FC = () => {
         return { ...prev, flavorPreference: [...current, flavor] };
       }
     });
+  };
+
+  const getSelectedProviderLabel = () => {
+    if (apiSettings.selectedProviderId === 'gemini') return 'Gemini';
+    if (apiSettings.selectedProviderId === 'openai') return 'ChatGPT';
+    return apiSettings.customProviders.find((p) => p.id === apiSettings.selectedProviderId)?.name || '自定义 API';
+  };
+
+  const addCustomProvider = () => {
+    const id = `custom_${Date.now()}`;
+    const item = {
+      id,
+      name: `自定义 API ${apiSettings.customProviders.length + 1}`,
+      baseUrl: 'https://api.openai.com/v1/chat/completions',
+      model: 'gpt-4o-mini',
+      apiKey: '',
+    };
+    setApiSettings((prev) => ({
+      ...prev,
+      selectedProviderId: id,
+      customProviders: [...prev.customProviders, item],
+    }));
+  };
+
+  const updateSelectedCustomProvider = (patch: Partial<{ name: string; baseUrl: string; model: string; apiKey: string }>) => {
+    const targetId = apiSettings.selectedProviderId;
+    setApiSettings((prev) => ({
+      ...prev,
+      customProviders: prev.customProviders.map((p) => (p.id === targetId ? { ...p, ...patch } : p)),
+    }));
+  };
+
+  const removeSelectedCustomProvider = () => {
+    const targetId = apiSettings.selectedProviderId;
+    const nextCustom = apiSettings.customProviders.filter((p) => p.id !== targetId);
+    setApiSettings((prev) => ({
+      ...prev,
+      selectedProviderId: prev.selectedProviderId === targetId ? 'gemini' : prev.selectedProviderId,
+      customProviders: nextCustom,
+    }));
   };
 
   const getGoalLabel = (goal: DietGoal) => {
@@ -270,6 +367,19 @@ const App: React.FC = () => {
               className="w-full bg-gray-50 border-none rounded-2xl p-4 text-sm font-medium"
             />
           </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              setApiTestMessage(null);
+              setApiTestOk(null);
+              setShowApiSettings(true);
+            }}
+            className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl border border-gray-200 bg-gray-50 text-gray-600 font-medium text-sm active:scale-[0.99] transition-all"
+          >
+            <Key size={18} className="text-gray-400" />
+            API 设置
+          </button>
 
           <div className="pt-4">
             <button 
@@ -400,7 +510,14 @@ const App: React.FC = () => {
       <header className="px-4 pt-12 pb-4 flex items-center sticky top-0 bg-white z-10 border-b border-gray-50">
         <button onClick={() => setPage('home')} className="p-2 active:scale-95 transition-all"><ChevronLeft size={24}/></button>
         <h2 className="flex-1 text-center font-bold text-lg">{config.mode === DietMode.BUYING ? '规划采买' : '清冰箱模式'}</h2>
-        <div className="w-10"></div>
+        <button onClick={() => {
+          setApiTestMessage(null);
+          setApiTestOk(null);
+          setShowApiSettings(true);
+        }} className="p-2 flex items-center gap-1 text-gray-500 hover:text-gray-700" title="API 设置">
+          <Key size={18} />
+          <span className="text-[10px] font-bold uppercase hidden sm:inline">API</span>
+        </button>
       </header>
       
       <div className="flex-1 overflow-y-auto px-6 py-6 space-y-8 no-scrollbar scroll-smooth">
@@ -673,6 +790,147 @@ const App: React.FC = () => {
     </div>
   );
 
+  const renderApiSettingsModal = () => {
+    const selectedCustom = apiSettings.customProviders.find((p) => p.id === apiSettings.selectedProviderId);
+    const isBuiltin = apiSettings.selectedProviderId === 'gemini' || apiSettings.selectedProviderId === 'openai';
+
+    return (
+      <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4">
+        <div className="bg-white rounded-t-[24px] sm:rounded-2xl w-full max-w-md max-h-[85vh] overflow-y-auto shadow-2xl p-6">
+          <div className="flex justify-between items-center mb-3">
+            <h3 className="text-lg font-bold text-gray-800">API 设置</h3>
+            <button onClick={() => setShowApiSettings(false)} className="p-2 rounded-full hover:bg-gray-100 text-gray-500"><X size={20}/></button>
+          </div>
+          <p className="text-xs text-gray-500 mb-4">当前：{getSelectedProviderLabel()}</p>
+
+          <div className="space-y-4">
+            <div>
+              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-2">选用接口</label>
+              <div className="flex gap-2">
+                {[
+                  { id: 'gemini', label: 'Gemini' },
+                  { id: 'openai', label: 'ChatGPT' },
+                ].map(({ id, label }) => (
+                  <button
+                    key={id}
+                    onClick={() => setApiSettings(prev => ({ ...prev, selectedProviderId: id as BuiltinApiProvider }))}
+                    className={`flex-1 py-3 rounded-xl text-sm font-bold border transition-all ${apiSettings.selectedProviderId === id ? 'bg-green-500 text-white border-green-500' : 'bg-gray-50 text-gray-600 border-gray-200'}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">自定义接口</label>
+                <button
+                  onClick={addCustomProvider}
+                  className="text-xs px-2 py-1 rounded-lg bg-gray-100 text-gray-600 font-bold"
+                >
+                  + 新增
+                </button>
+              </div>
+              {apiSettings.customProviders.length === 0 ? (
+                <p className="text-xs text-gray-400">暂无自定义 API</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {apiSettings.customProviders.map((item) => (
+                    <button
+                      key={item.id}
+                      onClick={() => setApiSettings(prev => ({ ...prev, selectedProviderId: item.id }))}
+                      className={`px-3 py-2 rounded-xl text-xs font-bold border ${apiSettings.selectedProviderId === item.id ? 'bg-green-500 text-white border-green-500' : 'bg-gray-50 text-gray-600 border-gray-200'}`}
+                    >
+                      {item.name || '未命名 API'}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {isBuiltin ? (
+              <div>
+                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-2">
+                  {apiSettings.selectedProviderId === 'gemini' ? 'Gemini API Key' : 'OpenAI API Key'}
+                </label>
+                <input
+                  type="password"
+                  autoComplete="off"
+                  placeholder={apiSettings.selectedProviderId === 'gemini' ? '在 aistudio.google.com 获取' : '在 platform.openai.com 获取'}
+                  value={apiSettings.builtinApiKeys[apiSettings.selectedProviderId as BuiltinApiProvider] ?? ''}
+                  onChange={(e) => setApiSettings(prev => {
+                    const selected = prev.selectedProviderId as BuiltinApiProvider;
+                    return {
+                      ...prev,
+                      builtinApiKeys: { ...prev.builtinApiKeys, [selected]: e.target.value }
+                    };
+                  })}
+                  className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-green-400 focus:outline-none"
+                />
+              </div>
+            ) : selectedCustom ? (
+              <div className="space-y-3">
+                <input
+                  value={selectedCustom.name}
+                  onChange={(e) => updateSelectedCustomProvider({ name: e.target.value })}
+                  placeholder="自定义 API 名称"
+                  className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-green-400 focus:outline-none"
+                />
+                <input
+                  value={selectedCustom.baseUrl}
+                  onChange={(e) => updateSelectedCustomProvider({ baseUrl: e.target.value })}
+                  placeholder="Base URL（如 https://xxx/v1/chat/completions）"
+                  className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-green-400 focus:outline-none"
+                />
+                <input
+                  value={selectedCustom.model}
+                  onChange={(e) => updateSelectedCustomProvider({ model: e.target.value })}
+                  placeholder="Model（如 gpt-4o-mini）"
+                  className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-green-400 focus:outline-none"
+                />
+                <input
+                  type="password"
+                  autoComplete="off"
+                  value={selectedCustom.apiKey}
+                  onChange={(e) => updateSelectedCustomProvider({ apiKey: e.target.value })}
+                  placeholder="API Key"
+                  className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-green-400 focus:outline-none"
+                />
+                <button
+                  onClick={removeSelectedCustomProvider}
+                  className="w-full py-3 rounded-2xl bg-red-50 text-red-600 text-sm font-bold border border-red-100"
+                >
+                  删除当前自定义 API
+                </button>
+              </div>
+            ) : null}
+          </div>
+          {apiTestMessage && (
+            <p className={`text-xs mt-4 ${apiTestOk ? 'text-green-600' : 'text-red-500'}`}>
+              {apiTestMessage}
+            </p>
+          )}
+          <div className="mt-6 grid grid-cols-2 gap-3">
+            <button
+              onClick={handleTestApiConnection}
+              disabled={apiTestLoading}
+              className="bg-green-600 text-white font-bold py-4 rounded-2xl disabled:opacity-70 active:scale-[0.98] transition-all"
+            >
+              {apiTestLoading ? '测试中...' : '测试连接'}
+            </button>
+            <button
+              onClick={() => setShowApiSettings(false)}
+              className="bg-gray-900 text-white font-bold py-4 rounded-2xl active:scale-[0.98] transition-all"
+            >
+              确定
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="max-w-md mx-auto h-screen bg-white shadow-2xl relative font-sans select-none flex flex-col overflow-hidden">
       <div className="h-full w-full overflow-hidden">
@@ -681,6 +939,7 @@ const App: React.FC = () => {
         {page === 'plan_input' && renderInputPage()}
         {page === 'result' && renderPlanResult()}
       </div>
+      {showApiSettings && renderApiSettingsModal()}
       <style>{`
         .shadow-up { box-shadow: 0 -4px 12px -2px rgba(0, 0, 0, 0.05); }
       `}</style>
